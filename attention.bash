@@ -6,6 +6,10 @@ ${DEBUG} && set -x
 
 readonly ME=$(realpath $(which "${0}"))
 readonly MYREALDIR=$(dirname "${ME}")
+readonly XATTR_DOMAIN='user.attenion'
+readonly XATTR_TRACKER="${XATTR_DOMAIN}.points"
+
+"${MYREALDIR}"/../s/exe/apt-ensure.bash xattr
 
 [ ${#} -eq 0 ] && set -- ls
 
