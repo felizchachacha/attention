@@ -5,9 +5,6 @@ readonly DEBUG=${DEBUG:-false}
 ${DEBUG} && set -x
 
 set -o pipefail
-shopt -s checkwinsize
-# https://unix.stackexchange.com/questions/184009/how-do-i-find-number-of-vertical-lines-available-in-the-terminal
-readonly MAXLINES=${LINES}
 
 readonly ME=$(realpath $(which "${0}"))
 readonly MYREALDIR=$(dirname "${ME}")
@@ -17,6 +14,7 @@ readonly XATTR_TRACKER="${XATTR_DOMAIN}.devoted"
 readonly HELPERUTILSDIR="${MYREALDIR}"/../s/exe # assumed https://gitlab.com/8e/s is there
 readonly DEFPATH='.'
 readonly JOBS=$(grep -c processor /proc/cpuinfo)
+readonly MAX_LINES=$("${HELPERUTILSDIR}"/get-textlines.bash)
 
 "${HELPERUTILSDIR}"/apt-ensure.bash attr moreutils # xattr?
 
@@ -53,12 +51,13 @@ function no_1st_column() {
 
 function list_neglected() {
 	#local depth=$1
-	#local tempfile="/tmp/${ME}.${USER}.$$.tmp"
-	#list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths #  | tee "${depth}.log" | list_neglected $(( depth +1 ))
-	list_paths | only_lower_value | no_1st_column | ifne tee >(ifne "${ME}" neglected -)
-	#list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column
-	#list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths #  | tee "${depth}.log" | list_neglected $(( depth +1 ))
-	#rm "${tempfile}"
+	local tempfile=$(mktemp /tmp/$(basename ${ME}).${USER}.$$.tmp.XXX)
+	#list_paths | only_lower_value | no_1st_column | ifne tee >(ifne "${ME}" neglected -; wait)
+	list_paths | only_lower_value | no_1st_column | tee "${tempfile}"
+	list_neglected < "${tempfile}"
+	#wait
+	#cat "${tempfile}"
+	rm "${tempfile}"
 }
 
 function get_path_devoted() {
@@ -89,6 +88,10 @@ function add_path_devoted() {
 	get_path_devoted "${path}"
 }
 
+function by_depth() {
+	ifne awk '{print gsub("/","/"), $0}' | ifne sort -rn | ifne cut -d' ' -f2-
+}
+
 [ ${#} -eq 0 ] && set -- ls
 
 while [ ${#} -gt 0 ]; do
@@ -115,7 +118,7 @@ while [ ${#} -gt 0 ]; do
 			else
 				#printf '%s\n' "${Paths[@]}" | list_neglected 0
 				[ ${#} -eq 0 ] && set -- "${DEFPATH}"
-				printf '%s\n' "${@}" | list_neglected | ifne xargs --no-run-if-empty --max-procs=${JOBS} -d "\n" "${ME}" show
+				printf '%s\n' "${@}" | list_neglected | by_depth | ifne xargs --no-run-if-empty --max-procs=${JOBS} -d "\n" "${ME}" show # | head -"${MAX_LINES}"
 			fi
 		exit 0
 		;;
