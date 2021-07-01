@@ -4,6 +4,11 @@ set -e
 readonly DEBUG=${DEBUG:-false}
 ${DEBUG} && set -x
 
+set -o pipefail
+shopt -s checkwinsize
+# https://unix.stackexchange.com/questions/184009/how-do-i-find-number-of-vertical-lines-available-in-the-terminal
+readonly MAXLINES=${LINES}
+
 readonly ME=$(realpath $(which "${0}"))
 readonly MYREALDIR=$(dirname "${ME}")
 readonly XATTR_DOMAIN='user.attenion'
@@ -11,26 +16,30 @@ readonly XATTR_TRACKER="${XATTR_DOMAIN}.devoted"
 #readonly BACKEND=xattr # would be nice to have an option of a file-backed storing as well
 readonly HELPERUTILSDIR="${MYREALDIR}"/../s/exe # assumed https://gitlab.com/8e/s is there
 readonly DEFPATH='.'
+readonly JOBS=$(grep -c processor /proc/cpuinfo)
 
 "${HELPERUTILSDIR}"/apt-ensure.bash attr moreutils # xattr?
 
-function att_list() {
-	declare -a Whats=("${@:-${DEFPATH}}")
-	printf '%s\n' "${Whats[@]}" | list_deeper
+# get: print solo values
+# show: print what is beig showd and values
+# list: show descendants
+
+function show_paths() {
+	while read path; do
+		show_a_path "${path}"
+	done
 }
 
 function filt() {
         ifne grep -v '/.$\|/..$' | ifne sed 's|/\./|/|g'
 }
 
-function list_deeper() {
+function list_paths() {
         while read path; do
-	#for path in "${@}"; do
-                (printf '%q\n' "${path}"/* "${path}"/.* || true) | filt
-        done | while read path; do
-		devoted=$(get_path_devoted "${path}")
-		echo -e "${devoted}\t${path}"
-	done | sort -n
+		if [ -L "${path}" ] || [ -d "${path}" ]; then
+			(printf '%q\n' "${path}"/* "${path}"/.* || true) | filt
+		fi
+        done | show_paths | sort -n
 }
 
 function only_lower_value() {
@@ -42,8 +51,14 @@ function no_1st_column() {
 	ifne awk '{$1=""}sub(FS,"")'
 }
 
-function get_neglected() {
-	list_deeper "${Whats[@]}" | only_lower_value | no_1st_column | get_neglected
+function list_neglected() {
+	#local depth=$1
+	#local tempfile="/tmp/${ME}.${USER}.$$.tmp"
+	#list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths #  | tee "${depth}.log" | list_neglected $(( depth +1 ))
+	list_paths | only_lower_value | no_1st_column | ifne tee >(ifne "${ME}" neglected -)
+	#list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column
+	#list_paths | only_lower_value | no_1st_column | list_paths | only_lower_value | no_1st_column | list_paths #  | tee "${depth}.log" | list_neglected $(( depth +1 ))
+	#rm "${tempfile}"
 }
 
 function get_path_devoted() {
@@ -51,6 +66,13 @@ function get_path_devoted() {
 	local value=$(getfattr -R --name "${XATTR_TRACKER}" "${path}" 2>/dev/null | awk -vFS='"' "/^${XATTR_TRACKER}=/ {counter+=\$2} END {print counter}")
 	[[ "${value}" == '' ]] && value=0
 	echo $value
+}
+
+function show_a_path() {
+	local path="${*:-${DEFPATH}}"
+	local value=$(getfattr -R --name "${XATTR_TRACKER}" "${path}" 2>/dev/null | awk -vFS='"' "/^${XATTR_TRACKER}=/ {counter+=\$2} END {print counter}")
+	[[ "${value}" == '' ]] && value=0
+	echo -e "${value}\t${path}"
 }
 
 function add_path_devoted() {
@@ -85,19 +107,36 @@ while [ ${#} -gt 0 ]; do
 
 		'neglected'|'n'|'next')
 			shift # past param
-			declare -a Whats=("${@:-${DEFPATH}}")
-			printf '%s\n' "${Whats[@]}" | get_neglected
+			if [[ "$1" == '-' ]]; then
+				shift
+				#depth=${1:-0}
+				#list_neglected "${depth}"
+				list_neglected
+			else
+				#printf '%s\n' "${Paths[@]}" | list_neglected 0
+				[ ${#} -eq 0 ] && set -- "${DEFPATH}"
+				printf '%s\n' "${@}" | list_neglected | ifne xargs --no-run-if-empty --max-procs=${JOBS} -d "\n" "${ME}" show
+			fi
 		exit 0
 		;;
 
 		'list'|'ls'|'l')
 			shift # past param
-			att_list "${@}"
+			[ ${#} -eq 0 ] && set -- "${DEFPATH}"
+			printf '%s\n' "${@}" | list_paths
+		exit 0
+		;;
+
+		'show'|'s')
+			shift # past param
+			[ ${#} -eq 0 ] && set -- "${DEFPATH}"
+			printf '%s\n' "${@}" | show_paths
 		exit 0
 		;;
 
 		'd'|'devoted'|'add'|'a')
 			shift # past param
+			#[ ${#} -eq 0 ] && set -- "${DEFPATH}"
 			add_path_devoted "${@}"
 		exit 0
 		;;
