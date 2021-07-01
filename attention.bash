@@ -16,7 +16,7 @@ readonly DEFPATH='.'
 
 function att_list() {
 	declare -a Whats=("${@:-${DEFPATH}}")
-	list_deeper "${Whats[@]}"
+	printf '%s\n' "${Whats[@]}" | list_deeper
 }
 
 function filt() {
@@ -24,8 +24,8 @@ function filt() {
 }
 
 function list_deeper() {
-        #while read f; do
-	for path in "${@}"; do
+        while read path; do
+	#for path in "${@}"; do
                 (printf '%q\n' "${path}"/* "${path}"/.* || true) | filt
         done | while read path; do
 		devoted=$(get_path_devoted "${path}")
@@ -34,17 +34,16 @@ function list_deeper() {
 }
 
 function only_lower_value() {
-	awk 'BEGIN {prev=-1} // { if ( $1>prev && prev > -1 ) exit ; else print }'
+	ifne awk 'BEGIN {prev=-1} // { if ( $1>prev && prev > -1 ) exit ; else print }'
 }
 
 function no_1st_column() {
 	# https://stackoverflow.com/questions/4198138/printing-everything-except-the-first-field-with-awk
-	awk '{$1=""}sub(FS,"")'
+	ifne awk '{$1=""}sub(FS,"")'
 }
 
 function get_neglected() {
-	declare -a Whats=("${@:-${DEFPATH}}")
-	list_deeper "${Whats[@]}" | only_lower_value | no_1st_column
+	list_deeper "${Whats[@]}" | only_lower_value | no_1st_column | get_neglected
 }
 
 function get_path_devoted() {
@@ -86,7 +85,8 @@ while [ ${#} -gt 0 ]; do
 
 		'neglected'|'n'|'next')
 			shift # past param
-			get_neglected "${@}"
+			declare -a Whats=("${@:-${DEFPATH}}")
+			printf '%s\n' "${Whats[@]}" | get_neglected
 		exit 0
 		;;
 
